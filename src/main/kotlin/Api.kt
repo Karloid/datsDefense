@@ -2,8 +2,14 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 var apiToken = ""
+
+//val BASE_URL = "https://games-test.datsteam.dev"
+val BASE_URL = "https://games.datsteam.dev"
 
 object Api {
 
@@ -17,123 +23,26 @@ object Api {
 
     /**
      *
-     * https://datsedenspace.datsteam.dev/player/universe
-     *
-     * Content type
-     * application/json
-     *
-     * response example
-     *
+     * get https://games-test.datsteam.dev/rounds/zombidef
      * {
-     *   "name": "MyTeam",
-     *   "ship": {
-     *     "capacityX": 8,
-     *     "capacityY": 11,
-     *     "fuelUsed": 1000,
-     *     "garbage": {
-     *       "6fTzQid": [
-     *         [
-     *           0,
-     *           0
-     *         ],
-     *         [
-     *           0,
-     *           1
-     *         ],
-     *         [
-     *           1,
-     *           1
-     *         ]
-     *       ],
-     *       "RVnTkM59": [
-     *         [
-     *           2,
-     *           2
-     *         ],
-     *         [
-     *           2,
-     *           3
-     *         ],
-     *         [
-     *           3,
-     *           3
-     *         ],
-     *         [
-     *           5,
-     *           3
-     *         ],
-     *         [
-     *           3,
-     *           5
-     *         ]
-     *       ]
-     *     },
-     *     "planet": {
-     *       "garbage": {
-     *         "6fTzQid": [
-     *           [
-     *             0,
-     *             0
-     *           ],
-     *           [
-     *             0,
-     *             1
-     *           ],
-     *           [
-     *             1,
-     *             1
-     *           ]
-     *         ],
-     *         "RVnTkM59": [
-     *           [
-     *             0,
-     *             0
-     *           ],
-     *           [
-     *             0,
-     *             1
-     *           ],
-     *           [
-     *             1,
-     *             1
-     *           ],
-     *           [
-     *             2,
-     *             1
-     *           ],
-     *           [
-     *             1,
-     *             2
-     *           ]
-     *         ]
-     *       },
-     *       "name": "string"
-     *     }
-     *   },
-     *   "universe": [
-     *     [
-     *       "Earth",
-     *       "Reinger",
-     *       100
-     *     ],
-     *     [
-     *       "Reinger",
-     *       "Earth",
-     *       100
-     *     ],
-     *     [
-     *       "Reinger",
-     *       "Larkin",
-     *       100
-     *     ]
-     *   ]
+     * "gameName": "defense",
+     * "now": "2021-01-01T00:00:00Z",
+     * "rounds": [
+     * {
+     * "duration": 60,
+     * "endAt": "2021-01-01T00:00:00Z",
+     * "name": "Round 1",
+     * "repeat": 1,
+     * "startAt": "2021-01-01T00:00:00Z",
+     * "status": "active"
+     * }
+     * ]
      * }
      */
-    fun getUniverse(): UniverseDto {
-        throttle()
-        // implementation
+
+    fun getRounds(): RoundsDto {
         val request = okhttp3.Request.Builder()
-            .url("https://datsedenspace.datsteam.dev/player/universe")
+            .url("$BASE_URL/rounds/zombidef")
             .get()
             .addHeader("Content-Type", "application/json")
             .addHeader("X-Auth-Token", apiToken)
@@ -149,12 +58,9 @@ object Api {
 
         val body = response.body?.string()
 
-        log(body)
-
-        val result = gson.fromJson(body, UniverseDto::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
+        val result = gson.fromJson(body, RoundsDto::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
         return result
     }
-
 
     val lastRequest = ArrayDeque<Long>()
 
@@ -184,93 +90,50 @@ object Api {
     }
 
     /**
-     * request example
-     * {
-     * "planets": [
-     * "Reinger-77",
-     * "Earth"
-     * ]
-     * }
+     * put https://games.datsteam.dev/play/zombidef/participate
+     *  no body
      *
-     * response example
-     *
+     *  response:
      * {
-     *   "fuelDiff": 1000,
-     *   "planetDiffs": [
-     *     {
-     *       "from": "Earth",
-     *       "fuel": 100,
-     *       "to": "Reinger"
-     *     }
-     *   ],
-     *   "planetGarbage": {
-     *     "6fTzQid": [
-     *       [
-     *         0,
-     *         0
-     *       ],
-     *       [
-     *         0,
-     *         1
-     *       ],
-     *       [
-     *         1,
-     *         1
-     *       ]
-     *     ],
-     *     "RVnTkM59": [
-     *       [
-     *         0,
-     *         0
-     *       ],
-     *       [
-     *         0,
-     *         1
-     *       ],
-     *       [
-     *         1,
-     *         1
-     *       ],
-     *       [
-     *         2,
-     *         1
-     *       ],
-     *       [
-     *         1,
-     *         2
-     *       ]
-     *     ]
-     *   },
-     *   "shipGarbage": {
-     *     "71B2XMi": [
-     *       [
-     *         2,
-     *         10
-     *       ],
-     *       [
-     *         2,
-     *         9
-     *       ],
-     *       [
-     *         2,
-     *         8
-     *       ],
-     *       [
-     *         3,
-     *         8
-     *       ]
-     *     ]
-     *   }
+     * "startsInSec": 300
+     *
+     * https://games-test.datsteam.dev/play/zombidef/participate
      * }
      */
-    fun travel(planetsToTravel: List<String>): PlanetInfo {
-        throttle()
-        // implementation
-        val requestBody = gson.toJson(mapOf("planets" to planetsToTravel))
+    fun joinRound(name: String): JoinResponse {
+
+        /*        val command = arrayOf(
+                    "curl", "-X", "PUT",
+                    "-H", "X-Auth-Token: $apiToken",
+                    "https://games-test.datsteam.dev/play/zombidef/participate"
+                )
+
+                try {
+                    // Execute the command
+                    val process = Runtime.getRuntime().exec(command)
+
+                    // Read the input stream to get the output of the command
+                    val inputStream = process.inputStream
+                    val response = inputStream.bufferedReader().readText()
+
+                    // Print the response
+                    println(response)
+
+                    val result = gson.fromJson(response, JoinResponse::class.java) ?: throw Exception("Failed to parse response response=$response body=$response")
+
+
+                    // Wait for the process to complete
+                    val exitCode = process.waitFor()
+                    println("Exit code: $exitCode")
+                    return result
+
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }*/
+
         val request = okhttp3.Request.Builder()
-            .url("https://datsedenspace.datsteam.dev/player/travel")
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-            .addHeader("Content-Type", "application/json")
+            .url("$BASE_URL/play/zombidef/participate")
+            .put(okhttp3.RequestBody.create(null, ""))
             .addHeader("X-Auth-Token", apiToken)
             .build()
 
@@ -286,117 +149,27 @@ object Api {
 
         log(body)
 
-        val planetInfo = gson.fromJson(body, PlanetInfo::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
-
-        planetInfo.constructGarbageArrays()
-        return planetInfo
+        val result = gson.fromJson(body, JoinResponse::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
+        return result
     }
 
     /**
-     *
-     * https://datsedenspace.datsteam.dev/player/collect
-     *
-     * request
-     *
      * {
-     *   "garbage": {
-     *     "71B2XMi": [
-     *       [
-     *         2,
-     *         10
-     *       ],
-     *       [
-     *         2,
-     *         9
-     *       ],
-     *       [
-     *         2,
-     *         8
-     *       ],
-     *       [
-     *         3,
-     *         8
-     *       ]
-     *     ]
-     *   }
+     * "realmName": "map1",
+     * "zpots": [
+     * {
+     * "x": 1,
+     * "y": 1,
+     * "type": "default"
+     * }
+     * ]
      * }
      *
-     * response
-     * {
-     *   "garbage": {
-     *     "71B2XMi": [
-     *       [
-     *         2,
-     *         10
-     *       ],
-     *       [
-     *         2,
-     *         9
-     *       ],
-     *       [
-     *         2,
-     *         8
-     *       ],
-     *       [
-     *         3,
-     *         8
-     *       ]
-     *     ]
-     *   },
-     *   "leaved": [
-     *     "RWEaughM",
-     *     "90B2XMi"
-     *   ]
-     * }
+     *GET  https://games.datsteam.dev/play/zombidef/world
      */
-    fun collect(garbageToCollect: Map<String, List<List<Int>>>): CollectResponse {
-        throttle()
-
-        val requestBody = gson.toJson(mapOf("garbage" to garbageToCollect))
+    fun getWorldState(): WorldState {
         val request = okhttp3.Request.Builder()
-            .url("https://datsedenspace.datsteam.dev/player/collect")
-            .post(okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), requestBody))
-            .addHeader("Content-Type", "application/json")
-            .addHeader("X-Auth-Token", apiToken)
-            .build()
-
-        val call = okHttpClient.newCall(request)
-
-        val response = call.execute()
-
-        if (response.isSuccessful.not()) {
-            throw Exception("Failed to execute request response=$response ${response.body?.string()} request=$requestBody")
-        }
-
-        val body = response.body?.string()
-
-        //  log(body)
-
-        return gson.fromJson(body, CollectResponse::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
-    }
-
-    /**
-     *
-     * GET https://datsedenspace.datsteam.dev/player/rounds
-     *
-     * response
-     * {
-     *   "rounds": [
-     *     {
-     *       "startAt": "2024-04-04 14:00:00",
-     *       "endAt": "2024-04-04 14:30:00",
-     *       "isCurrent": false,
-     *       "name": "round 1",
-     *       "planetCount": 100
-     *     }
-     *   ]
-     * }
-     */
-    fun getRoundInfo(): RoundsInfo {
-        throttle()
-
-        val request = okhttp3.Request.Builder()
-            .url("https://datsedenspace.datsteam.dev/player/rounds")
+            .url("$BASE_URL/play/zombidef/world")
             .get()
             .addHeader("Content-Type", "application/json")
             .addHeader("X-Auth-Token", apiToken)
@@ -407,25 +180,76 @@ object Api {
         val response = call.execute()
 
         if (response.isSuccessful.not()) {
-            throw Exception("Failed to execute request response=$response ${response.body?.string()}")
+            throw Exception("Failed to execute request response=$response body=${response.body?.string()}")
         }
 
         val body = response.body?.string()
 
-        log(body)
+       // log (body)
 
-        return gson.fromJson(body, RoundsInfo::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
+        val result = gson.fromJson(body, WorldState::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
+        return result
     }
 
     /**
-     * DELETE https://datsedenspace.datsteam.dev/player/reset
+     * get https://games.datsteam.dev/play/zombidef/units
+     *
+     *  {
+     * "base": [
+     * {
+     * "attack": 10,
+     * "health": 100,
+     * "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+     * "isHead": true,
+     * "lastAttack": {
+     * "x": 1,
+     * "y": 1
+     * },
+     * "range": 5,
+     * "x": 1,
+     * "y": 1
+     * }
+     * ],
+     * "enemyBlocks": [
+     * {
+     * "attack": 10,
+     * "health": 100,
+     * "isHead": true,
+     * "x": 1,
+     * "y": 1
+     * }
+     * ],
+     * "player": {
+     * "enemyBlockKills": 100,
+     * "gameEndedAt": "2021-10-10T10:00:00Z",
+     * "gold": 100,
+     * "name": "player-test",
+     * "points": 100,
+     * "zombieKills": 100
+     * },
+     * "realmName": "map1",
+     * "turn": 1,
+     * "turnEndsInMs": 1000,
+     * "zombies": [
+     * {
+     * "attack": 10,
+     * "direction": "up",
+     * "health": 100,
+     * "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+     * "speed": 10,
+     * "type": "normal",
+     * "waitTurns": 1,
+     * "x": 1,
+     * "y": 1
+     * }
+     * ]
+     * }
      */
-    fun resetRound() {
-        throttle()
+    fun getUnits(): WorldUnits {
 
         val request = okhttp3.Request.Builder()
-            .url("https://datsedenspace.datsteam.dev/player/reset")
-            .delete()
+            .url("$BASE_URL/play/zombidef/units")
+            .get()
             .addHeader("Content-Type", "application/json")
             .addHeader("X-Auth-Token", apiToken)
             .build()
@@ -435,217 +259,305 @@ object Api {
         val response = call.execute()
 
         if (response.isSuccessful.not()) {
-            throw Exception("Failed to execute request response=$response ${response.body?.string()}")
+            throw Exception("Failed to execute request response=$response body=${response.body?.string()}")
         }
 
         val body = response.body?.string()
 
-        log(body)
+    //    log(body)
+
+        val result = gson.fromJson(body, WorldUnitsDto::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
+        return result.toObj()
+    }
+
+    /**
+     * POST https://games-test.datsteam.dev/play/zombidef/command
+     *
+     * request
+     * {
+     *   "attack": [
+     *     {
+     *       "blockId": "f47ac10b-58cc-0372-8562-0e02b2c3d479",
+     *       "target": {
+     *         "x": 1,
+     *         "y": 1
+     *       }
+     *     }
+     *   ],
+     *   "build": [
+     *     {
+     *       "x": 1,
+     *       "y": 1
+     *     }
+     *   ],
+     *   "moveBase": {
+     *     "x": 1,
+     *     "y": 1
+     *   }
+     * }
+     *
+     * response
+     *
+     * {
+     *   "acceptedCommands": {
+     *     "attack": [
+     *       {
+     *         "blockId": "f47ac10b-58cc-0372-8562-0e02b2c3d479",
+     *         "target": {
+     *           "x": 1,
+     *           "y": 1
+     *         }
+     *       }
+     *     ],
+     *     "build": [
+     *       {
+     *         "x": 1,
+     *         "y": 1
+     *       }
+     *     ],
+     *     "moveBase": {
+     *       "x": 1,
+     *       "y": 1
+     *     }
+     *   },
+     *   "errors": [
+     *     "coordinate at {0 0} is already occupied"
+     *   ]
+     * }
+     */
+    fun command(cmd: Command): CommandResponse {
+        val json = gson.toJson(cmd)
+
+      //  log(json)
+
+        val body = okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), json)
+
+        val request = okhttp3.Request.Builder()
+            .url("$BASE_URL/play/zombidef/command")
+            .post(body)
+            .addHeader("Content-Type", "application/json")
+            .addHeader("X-Auth-Token", apiToken)
+            .build()
+
+        val call = okHttpClient.newCall(request)
+
+        val response = call.execute()
+
+        if (response.isSuccessful.not()) {
+            throw Exception("Failed to execute request response=$response body=${response.body?.string()}")
+        }
+
+        val bodyResponse = response.body?.string()
+
+
+      //  log(bodyResponse)
+
+        val result = gson.fromJson(bodyResponse, CommandResponse::class.java) ?: throw Exception("Failed to parse response response=$response body=$bodyResponse")
+
+      //  log(result)
+
+        return result
     }
 }
 
-
-class RoundsInfo {
-    @JvmField
-    var rounds: List<Round>? = null
-
-
+data class CommandResponse(
+    val acceptedCommands: AcceptedCommand,
+    val errors: List<String>?
+) {
+    data class AcceptedCommand(
+        val attack: List<Attack>,
+        val build: List<Point2D>,
+        val moveBase: Point2D
+    ) {
+        data class Attack(
+            val blockId: String,
+            val target: Point2D
+        )
+    }
 }
 
-class Round {
-    @JvmField
-    var startAt: String? = null
-
-    @JvmField
-    var endAt: String? = null
-
-    @JvmField
-    var isCurrent: Boolean = false
-
-    @JvmField
-    var name: String = ""
-
-    @JvmField
-    var planetCount: Int = 0
-
+data class Command(
+    val attack: MutableList<Attack> = mutableListOf(),
+    val build: MutableList<Point2D> = mutableListOf(),
+    var moveBase: Point2D? = null,
+) {
+    data class Attack(
+        val blockId: String,
+        val target: Point2D
+    )
 }
 
-class CollectResponse {
-    @JvmField
-    var garbage: Map<String, List<List<Int>>>? = null
 
-    @JvmField
-    var leaved: List<String>? = null
-}
+data class Base(
+    val attack: Int,
+    val health: Int,
+    val id: String,
+    val isHead: Boolean,
+    val lastAttack: Point2D,
+    val range: Int,
+    val x: Int,
+    val y: Int
+) {
 
-var SHIP_WIDTH = 5
-var SHIP_HEIGHT = 7
-
-class PlanetInfo {
-    @JvmField
-    var fuelDiff: Int = 0
-
-    @JvmField
-    var planetDiffs: List<PlanetDiff>? = null
-
-    @JvmField
-    var planetGarbage: Map<String, List<List<Int>>>? = null
-
-    @JvmField
-    var shipGarbage: Map<String, List<List<Int>>>? = null
-
-    lateinit var richShipGarbage: RichShipGarbage
-    lateinit var richPlanetGarbage: RichPlanetGarbage
-
-
-    fun constructGarbageArrays() {
-        richShipGarbage = RichShipGarbage()
-
-        richShipGarbage.simpleMap = shipGarbage ?: emptyMap()
-
-        richShipGarbage.occupyArray = BooleanPlainArray(SHIP_WIDTH, SHIP_HEIGHT)
-
-        richShipGarbage.simpleMap.values.forEach {
-            it.forEach { pair ->
-                richShipGarbage.occupyArray.set(pair[0], pair[1], true)
+    private var _pos: Point2D? = null
+    val pos: Point2D
+        get() {
+            if (_pos == null) {
+                _pos = Point2D(x, y)
             }
+            return _pos!!
+        }
+}
+
+data class Player(
+    val enemyBlockKills: Int,
+    val gameEndedAt: String,
+    val gold: Int,
+    val name: String,
+    val points: Int,
+    val zombieKills: Int
+) {
+
+}
+
+data class EnemyBlock(
+    val attack: Int,
+    val health: Int,
+    val isHead: Boolean,
+    val x: Int,
+    val y: Int
+) {
+
+    var _pos: Point2D? = null
+    val pos: Point2D
+        get() {
+            if (_pos == null) {
+                _pos = Point2D(x, y)
+            }
+            return _pos!!
+        }
+}
+
+data class WorldUnitsDto(
+    var base: List<Base>?,
+    var enemyBlocks: List<EnemyBlock>?,
+    val player: Player,
+    val realmName: String,
+    val turn: Int,
+    val turnEndsInMs: Int,
+    var zombies: List<Zombie>?,
+) {
+    fun toObj(): WorldUnits {
+        return WorldUnits(base ?: emptyList(), enemyBlocks ?: emptyList(), player, realmName, turn, turnEndsInMs, zombies ?: emptyList())
+    }
+}
+
+data class WorldUnits(
+    var base: List<Base>,
+    var enemyBlocks: List<EnemyBlock>,
+    val player: Player,
+    val realmName: String,
+    val turn: Int,
+    val turnEndsInMs: Int,
+    var zombies: List<Zombie>,
+) {
+}
+
+
+data class Zombie(
+    val attack: Int,
+    val direction: String,
+    val health: Int,
+    val id: String,
+    val speed: Int,
+    val type: String,
+    val waitTurns: Int,
+    val x: Int,
+    val y: Int
+) {
+    var _pos: Point2D? = null
+    val pos: Point2D
+        get() {
+            if (_pos == null) {
+                _pos = Point2D(x, y)
+            }
+            return _pos!!
         }
 
-
-        richPlanetGarbage = RichPlanetGarbage()
-        richPlanetGarbage.simpleMap = planetGarbage!!
-        richPlanetGarbage.listOfRichGarabge = richPlanetGarbage.simpleMap.entries.map { entry ->
-            RichGarbage(entry.key, entry.value)
-        }
+    fun posEqual(pos: Point2D): Boolean {
+        return x == pos.x && y == pos.y
     }
 
-    fun deepCopy(): PlanetInfo {
-        val result = PlanetInfo()
-        result.fuelDiff = fuelDiff
-        result.planetDiffs = planetDiffs
-        result.planetGarbage = planetGarbage
-        result.shipGarbage = shipGarbage
-        result.richShipGarbage = richShipGarbage.deepCopy()
-        result.richPlanetGarbage = richPlanetGarbage.deepCopy()
-        return result
-    }
 }
 
-class RichGarbage(val garbageId: String, var pointsAsList: List<List<Int>>) {
-    val occupyArray = BooleanPlainArray(SHIP_WIDTH, SHIP_HEIGHT)
+data class WorldState(
+    val realmName: String,
+    val zpots: List<Zpot>
+) {
 
-    init {
-        constructOccupyArray()
+}
 
-        //val listOfArrayPoints: List<List<Int>> = occupyArray.toListOfArrayPoints()
-        // TODO add rotation for occupyArray
-    }
+data class Zpot(
+    val x: Int,
+    val y: Int,
+    val type: String
+) {
 
-    fun applyRotation(rotation: Int) {
-        if (rotation == 0) {
-            return
-        }
-        // rotation = 1 = 90 degrees
-        // rotation = 2 = 180 degrees
-        // rotation = 3 = 270 degrees
-
-        val times = rotation % 4
-        for (i in 1..times) {
-            pointsAsList = pointsAsList.map { listOf(it[1], -it[0]) }
+    var _pos: Point2D? = null
+    val pos: Point2D
+        get() {
+            if (_pos == null) {
+                _pos = Point2D(x, y)
+            }
+            return _pos!!
         }
 
-        // align all coordinates to top left corner, so none of coordinates is negative, but we should stick to top left corner
-        val minX = pointsAsList.minOf { it[0] }
-        val minY = pointsAsList.minOf { it[1] }
-
-        pointsAsList = pointsAsList.map { listOf(it[0] - minX, it[1] - minY) }
-
-        constructOccupyArray()
-    }
-
-    private fun constructOccupyArray() {
-        occupyArray.clear()
-        pointsAsList.forEach { pair ->
-            occupyArray.set(pair[0], pair[1], true)
-        }
-    }
-
-    fun deepCopy(): RichGarbage {
-        val result = RichGarbage(garbageId, pointsAsList.map { it.toList() })
-        return result
+    fun posEqual(pos: Point2D): Boolean {
+        return x == pos.x && y == pos.y
     }
 
 }
 
-class RichShipGarbage {
-    fun deepCopy(): RichShipGarbage {
-        val result = RichShipGarbage()
-        result.simpleMap = simpleMap
-        result.occupyArray = occupyArray.copy()
-        return result
+data class JoinResponse(
+    var startsInSec: Int,
+) {
+
+}
+
+data class RoundsDto(
+    var gameName: String,
+    var now: String,
+    var rounds: List<Round>
+) {
+
+    fun getNowAsLong(): Long {
+        val stringDate = now
+        return toMillis(stringDate)
+    }
+}
+
+data class Round(
+    var duration: Int,
+    var endAt: String,
+    var name: String,
+    var repeat: Int,
+    var startAt: String,
+    var status: String
+) {
+
+    fun getEndAsLong(): Long {
+        val stringDate = endAt
+        return toMillis(stringDate)
     }
 
-
-    lateinit var occupyArray: BooleanPlainArray
-    lateinit var simpleMap: Map<String, List<List<Int>>>
-}
-
-class RichPlanetGarbage {
-    fun deepCopy(): RichPlanetGarbage {
-        val result = RichPlanetGarbage()
-        result.simpleMap = HashMap(simpleMap)
-        result.listOfRichGarabge = listOfRichGarabge.map { it.deepCopy() }
-        return result
+    fun getStartAsLong(): Long {
+        val stringDate = startAt
+        return toMillis(stringDate)
     }
 
-    lateinit var simpleMap: Map<String, List<List<Int>>>
-    lateinit var listOfRichGarabge: List<RichGarbage>
+    override fun toString(): String {
+        return "Round( name='$name' duration=$duration, endAt=${getEndAsLong().toDate()}, repeat=$repeat, startAt=${getStartAsLong().toDate()}, status='$status')"
+    }
 }
 
-
-class PlanetDiff {
-    @JvmField
-    var from: String? = null
-
-    @JvmField
-    var fuel: Int = 0
-
-    @JvmField
-    var to: String? = null
-}
-
-class UniverseDto {
-    @JvmField
-    var name: String? = null
-
-    @JvmField
-    var ship: ShipDto? = null
-
-    @JvmField
-    var universe: List<List<Any>>? = null
-}
-
-class ShipDto {
-    @JvmField
-    var capacityX: Int = 0
-
-    @JvmField
-    var capacityY: Int = 0
-
-    @JvmField
-    var fuelUsed: Int = 0
-
-    @JvmField
-    var garbage: Map<String, List<List<Int>>>? = null
-
-    @JvmField
-    var planet: PlanetDto? = null
-}
-
-class PlanetDto {
-    @JvmField
-    var garbage: Map<String, List<List<Int>>>? = null
-
-    @JvmField
-    var name: String? = null
-}
+private fun toMillis(stringDate: String) = LocalDateTime.parse(stringDate, DateTimeFormatter.ISO_DATE_TIME).toInstant(ZoneOffset.UTC).toEpochMilli()

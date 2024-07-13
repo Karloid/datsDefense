@@ -1,11 +1,7 @@
 import java.io.File
+import java.text.DateFormat
 import java.util.*
-import java.util.concurrent.Callable
 import java.util.concurrent.Executors
-import java.util.stream.Collectors
-import java.util.stream.IntStream
-import kotlin.collections.ArrayDeque
-import kotlin.math.roundToInt
 
 
 var startCollectTs = 0L
@@ -13,10 +9,14 @@ var startCollectTs = 0L
 const val THREAD_COUNT = 8
 val executor = Executors.newFixedThreadPool(THREAD_COUNT)
 
+lateinit var state: State
+
 fun main(args: Array<String>) {
     println("Started ${Date()}")
     apiToken = args.first()
     println(args.joinToString { it })
+
+    loadState()
 
     while (true) {
         runCatching { doLoop() }
@@ -27,218 +27,178 @@ fun main(args: Array<String>) {
     }
 }
 
+fun loadState() {
+    File("state.json").takeIf { it.exists() }?.let {
+        val parsedState = Api.gson.fromJson(it.readText(), State::class.java)
+        state = parsedState
+    } ?: run {
+        state = State()
+    }
+}
+
+data class State(var currentRound: String? = "") {
+    fun save() {
+        File("state.json").writeText(Api.gson.toJson(this))
+    }
+}
+
 private fun doLoop() {
+    val roundsInfo = Api.getRounds()
 
-    // Api.resetRound(); System.exit(1)
+    val activeRound = roundsInfo.rounds.firstOrNull { it.status == "active" }
 
-    val roundInfo = Api.getRoundInfo()
+    log("my round=${state.currentRound} active round $activeRound")
 
-    val roundName = roundInfo.rounds?.firstOrNull { it.isCurrent }?.name ?: "unknown-round"
+    val canRegisterTo = activeRound?.takeIf {
+        val elapsedTime = System.currentTimeMillis() - it.getStartAsLong()
+        log("active round elapsed=${elapsedTime / 1000} sec")
 
-    // load visited planets from file from file system "$ROUND_NAME.txt"
-    visitedPlanets.clear()
-    val file = File("$roundName.txt")
-    if (file.exists()) {
-        file.readLines().forEach {
-            visitedPlanets.add(it)
-        }
+        elapsedTime < 5 * 60 * 1000
     }
-    visitedPlanets.add("Eden")
-    visitedPlanets.add("Earth")
 
+    if (activeRound != null && activeRound.name != state.currentRound && canRegisterTo != activeRound) {
+        log("active round not match, reset to empty, prevValue=${state.currentRound}")
+        state.currentRound = ""
+        state.save()
+        log("there is active round=$activeRound im not participating in it, time left=${(activeRound.getEndAsLong() - roundsInfo.getNowAsLong()) / 1000} sec}")
 
-    while (true) {
-        log("get universe")
-        val universe = Api.getUniverse()
+        Thread.sleep(10_000)
+        return
+    }
 
-        SHIP_WIDTH = universe.ship!!.capacityX
-        SHIP_HEIGHT = universe.ship!!.capacityY
-
-        logMap("current cargo", universe.ship!!.garbage!!)
-
-        val planetsToTravel = getPlanetsToTravel(universe).toMutableList()
-
-        log("myPlanetIs=${universe.ship!!.planet!!.name!!}", "planetsToTravel", planetsToTravel)
-
-        val finalPlanetsPath = planetsToTravel.also { it.removeFirst() }
-
-        if (finalPlanetsPath.isEmpty()) {
-            log("no planets to travel, sleep")
-            Thread.sleep(1000)
-            throw RuntimeException("no planets to travel, restart, wait for new round")
-        }
-
-        val planetInfo = Api.travel(finalPlanetsPath)
-
-        if (planetInfo.planetGarbage!!.isEmpty()) {
-            saveVisitedPlanets(roundName)
-            log("no garbage on planet, go next")
-            Thread.sleep(500)
-            continue
-        }
-
-        startCollectTs = System.currentTimeMillis()
-
-        val maxGarbage = findBestLoadOutFacade(planetInfo)
-
-        val occupied = maxGarbage.values.map { it.size }.sum()
-        val maxOccupied = SHIP_HEIGHT * SHIP_WIDTH
-        val ratioToCargo = occupied.toDouble() / maxOccupied
-        val ratioToPlanet = occupied.toDouble() / planetInfo.planetGarbage!!.values.map { it.size }.sum()
-        val planetMaxOccupied = planetInfo.planetGarbage!!.values.map { it.size }.sum()
-        logMap("maxGarbage occupied $occupied from $maxOccupied ratioToCargo=$ratioToCargo, planetMaxOccupied=$planetMaxOccupied ratioToPlanet=$ratioToPlanet", maxGarbage)
-
-        if (maxOccupied > occupied) {
-            log("there still garbage at='$planetsToTravel' removeIt from visited planets")
-            visitedPlanets.remove(planetsToTravel.last())
-        }
-        saveVisitedPlanets(roundName)
-
+    // join next round
+    if (canRegisterTo != null) {
         runCatching {
-            Api.collect(maxGarbage)
+            log(
+                "join next round nextRound.name=${canRegisterTo.name} start=${canRegisterTo.getStartAsLong().toDate()} now=${
+                    roundsInfo.getNowAsLong().toDate()
+                } diff=${(canRegisterTo.getStartAsLong() - roundsInfo.getNowAsLong()) / 1000} sec"
+            )
+            val joinRound = Api.joinRound(canRegisterTo.name)
+
+            canRegisterTo.name.let {
+                state.currentRound = it
+                state.save()
+            }
+            log("joined round $joinRound sleep for ${joinRound.startsInSec} sec")
+            Thread.sleep(joinRound.startsInSec * 1000L)
+            log("after sleep")
         }.onFailure {
-
-            val shouldResetVisitedPlanets = !(it.message?.contains("Bad Gateway") == true)
-            if (shouldResetVisitedPlanets) {
-                visitedPlanets.clear()
-                saveVisitedPlanets(roundName)
-                visitedPlanets.add("Eden")
-                visitedPlanets.add("Earth")
-            }
-            throw it
+            log("join next round failed, but it may be ok  ${it.stackTraceToString()}")
+            Thread.sleep(1000)
         }
 
-        log("collected")
-
-        Thread.sleep(500)
-        // break
     }
-}
-
-private fun findBestLoadOutFacade(planetInfo: PlanetInfo): Map<String, List<List<Int>>> {
-    val futures = IntStream.range(0, THREAD_COUNT)
-        .mapToObj { executor.submit(Callable { findBestLoadOut(planetInfo.deepCopy()) }) }
-        .collect(Collectors.toList())
-
-    val maxGarbages = futures.stream()
-        .map { it.get() }
-        .collect(Collectors.toList())
-
-    val maxGarbage = maxGarbages.maxBy { it.values.map { it.size }.sum() }
-    return maxGarbage
-}
-
-fun saveVisitedPlanets(roundName: String) {
-    val file = File("$roundName.txt")
-    file.absoluteFile.let { println("file path " + it) }
-    file.writeText(visitedPlanets.joinToString("\n"))
-}
-
-/**
- * output is like
- * . . . G
- * . . G G
- * . . G G
- *
- * size of ship is WIDTH HEIGHT from constants
- */
-fun logMap(label: String, garbage: Map<String, List<List<Int>>>) {
-    val ship = Array(SHIP_HEIGHT) { Array(SHIP_WIDTH) { '.' } }
-
-    garbage.forEach { (garbageId, positions) ->
-        positions.forEach {
-            val x = it[0]
-            val y = it[1]
-            ship[y][x] = 'G'
-        }
+    if (activeRound?.name != state.currentRound) {
+        log("active round not match, reset to empty, prevValue=${state.currentRound} activeRound=$activeRound")
+        state.currentRound = ""
+        state.save()
+        return
     }
+    var worldState: WorldState? = null
 
-    println(label)
-    ship.forEach {
-        println(it.joinToString(" "))
-    }
-}
-
-fun findBestLoadOut(planetInfo: PlanetInfo): Map<String, List<List<Int>>> {
-    var bestLoadout: MutableMap<String, List<List<Int>>> = mutableMapOf()
-
-    val planetMaxSum = planetInfo.planetGarbage!!.values.map { it.size }.sum()
-
-    var count = 0
-    var countUpgrades = 0
     while (true) {
-        count++
-        val pair = doRandomSearch(planetInfo)
-        val candidate_bestLoadout = pair.first
-
-        val newSum = candidate_bestLoadout.values.map { it.size }.sum()
-        val prevSum2 = bestLoadout.values.map { it.size }.sum()
-        if (newSum > prevSum2) {
-            countUpgrades++
-            log("findBestLoadOut currentOccupy prev=${prevSum2} newSum=${newSum}")
-            bestLoadout = candidate_bestLoadout
+        runCatching {
+            worldState = Api.getWorldState()
+        }.onFailure {
+            log("getWorldState failed, retry in  ${it.stackTraceToString()}")
+            Thread.sleep(1000)
         }
 
-        if (newSum == planetMaxSum) {
-            log("all garbage collected")
-            break
-        }
-
-        if (System.currentTimeMillis() - startCollectTs > 3000) {
+        if (worldState != null) {
             break
         }
     }
 
-    log("findBestLoadOut FINAL variantsChecked=${count} countUpgrades=$countUpgrades currentOccupy")
-    logNotPretty("findBestLoadOut took=${System.currentTimeMillis() - startCollectTs} bestLoadout", bestLoadout)
+    // play round
+    while (true) {
+        log("get playRound")
+        val worldUnits = Api.getUnits()
+        log("current turn ${worldUnits.turn} turnEndsInMs=${worldUnits.turnEndsInMs}")
+        val startsTs = System.currentTimeMillis()
+        val endTurn = startsTs + worldUnits.turnEndsInMs
 
-    return bestLoadout
+        makeTurn(worldUnits, worldState!!)
+
+        val delay = endTurn - System.currentTimeMillis() + 2
+        log("sleep for $delay ")
+        if (delay > 0) {
+            Thread.sleep(delay)
+        }
+        break
+    }
 }
 
-private fun doRandomSearch(planetInfo: PlanetInfo): Pair<MutableMap<String, List<List<Int>>>, BooleanPlainArray> {
-    val shipInitialOccupy = planetInfo.richShipGarbage.occupyArray
+fun makeTurn(units: WorldUnits, worldState: WorldState) {
+    var myGold = units.player.gold
 
-    val bestLoadout = mutableMapOf<String, List<List<Int>>>()
+    val cmd = Command()
 
-    val queue = ArrayDeque(planetInfo.richPlanetGarbage.listOfRichGarabge)
-    Collections.shuffle(queue)
-    queue.forEach { garbage ->
-        val rotation = (Math.random() * 4).toInt()
+    val costBase = 1
 
-        garbage.applyRotation(rotation)
+    log("my states gold=${myGold} base=${units.base?.size} zombies=${units.zombies?.size} enemyBlocks=${units.enemyBlocks?.size} zpots=${worldState.zpots.size}")
+
+    val headBase = units.base.firstOrNull() { it.isHead }
+
+    val allPossiblePlaces = units.base?.flatMap { b ->
+        val pos = b.pos
+
+        pos.neighbors().filter { pos ->
+            inBounds(pos)
+                    && worldState.zpots.none { it.posEqual(pos) }
+                    && units.zombies.none { it.posEqual(pos) }
+                    && units.base.none { it.pos.equals(pos) }
+                    && units.enemyBlocks.none { it.pos.neighborTo(pos) }
+
+                    && worldState.zpots.none { it.pos.neighborTo(pos) }
+                    && units.enemyBlocks.none { it.pos.diagonalNeighborTo(pos) }
+
+        }
+    }?.sortedBy {
+        headBase?.pos?.euclidianDistance2(it) ?: 0.0
+    } ?: emptyList()
+
+    allPossiblePlaces.take(myGold).forEach { posToBuild ->
+        cmd.build.add(posToBuild)
     }
 
-    var currentOccupy = shipInitialOccupy.copy()
+    // kill zombies
 
-    while (queue.isNotEmpty()) {
-        val candidate = queue.removeFirst()
 
-        val candidateOccupy = candidate.occupyArray
+    units.base.forEach { base ->
+        val pos = base.pos
 
-        var breakRepeat = false
-        repeat(SHIP_WIDTH) { shiftX ->
-            if (breakRepeat) {
-                return@repeat
-            }
-            repeat(SHIP_HEIGHT) { shiftY ->
-                if (breakRepeat) {
-                    return@repeat
-                }
-                if (canBeApplied(currentOccupy, candidateOccupy, shiftX, shiftY)) {
-                    currentOccupy = applyOccupy(currentOccupy, candidateOccupy, shiftX, shiftY)
-                    val points: List<List<Int>> = candidate.pointsAsList
-                    bestLoadout[candidate.garbageId] = points.map {
-                        listOf(it[0] + shiftX, it[1] + shiftY)
-                    }
-                    breakRepeat = true
+        val range = base.range
 
-                    //  logNotPretty("add to bestLoadout =${candidate.garbageId} shiftX=$shiftX shiftY=$shiftY cells=", bestLoadout)
-                    return@repeat
-                }
-            }
+        val zombiesInRange = units.zombies.filter { it.pos.euclidianDistance2(pos) <= range * range }.minByOrNull { it.pos.euclidianDistance2(pos) }
+
+        zombiesInRange?.let { z ->
+            cmd.attack.add(Command.Attack(base.id, z.pos))
+            return@forEach
+        }
+
+        val enemyBlock = units.enemyBlocks.filter { it.pos.euclidianDistance2(pos) <= range * range }.minByOrNull { it.pos.euclidianDistance2(pos) }
+
+        enemyBlock?.let { z ->
+            cmd.attack.add(Command.Attack(base.id, z.pos))
+            return@forEach
         }
     }
-    return Pair(bestLoadout, currentOccupy)
+
+    val response = Api.command(cmd)
+
+    log("cmd response, accepted commands= attacks=${response.acceptedCommands.attack.size} build=${response.acceptedCommands.build.size} failed=${response.errors?.size} ${response.errors}")
+}
+
+fun inBounds(it: Point2D): Boolean {
+    return it.x >= 0 && it.y >= 0
+}
+
+fun Long.toDate(): String {
+    Date(this).let {
+        // print only  24hours time + seconds from date
+        return DateFormat.getTimeInstance(DateFormat.MEDIUM).format(it)
+    }
 }
 
 fun logMap(label: String, garbage: BooleanPlainArray) {
@@ -252,162 +212,6 @@ fun logMap(label: String, garbage: BooleanPlainArray) {
     ship.forEach {
         println(it.joinToString(" "))
     }
-}
-
-fun canBeApplied(first: BooleanPlainArray, second: BooleanPlainArray, shiftX: Int, shiftY: Int): Boolean {
-    var result = true
-
-    second.fori { x, y, value ->
-        if (value) {
-            val x1 = x + shiftX
-            val y1 = y + shiftY
-
-            if (x1 < 0 || x1 >= first.cellsWidth || y1 < 0 || y1 >= first.cellsHeight) {
-                result = false
-                return@fori
-            }
-
-            if (first.getFast(x1, y1)) {
-                result = false
-                return@fori
-            }
-        }
-    }
-
-    return result
-}
-
-// apply second to first without copy, apply shift as well
-fun applyOccupy(first: BooleanPlainArray, second: BooleanPlainArray, shiftX: Int, shiftY: Int): BooleanPlainArray {
-
-    second.fori { x, y, value ->
-        if (value) {
-            val x1 = x + shiftX
-            val y1 = y + shiftY
-
-            first.setFast(x1, y1, true)
-        }
-    }
-
-    return first
-
-}
-
-private val EDEN_PLANET = "Eden"
-
-private fun getPlanetsToTravel(universe: UniverseDto): List<String> {
-
-    val shipHasGarbage = universe.ship!!.garbage!!.isNotEmpty()
-
-    val currentPlanet = universe.ship!!.planet
-
-    val occupied = universe.ship!!.garbage!!.values.map { it.size }.sum()
-    val totalSpace = SHIP_HEIGHT * SHIP_WIDTH
-
-    val occupiedRatio = occupied.toDouble() / totalSpace
-
-    val targetPlanet = if (shipHasGarbage && occupiedRatio > 0.4) {
-        log("getPlanetsToTravel go to empty garbage on Eden")
-        EDEN_PLANET
-    } else {
-
-        findClosestPlanetWithConditionBfs(universe, currentPlanet!!.name!!).also {
-            visitedPlanets.add(it)
-        }.also {
-            log("getPlanetsToTravel go to closest not visited planet with garbage $it ${if (occupiedRatio > 0.0001) " SHIP HAS SOME GARBAGE ration=${occupiedRatio}" else ""}")
-        }
-    }
-
-    // find path to target planet by bfs
-    val path = aStarSearch(universe, currentPlanet!!.name!!, targetPlanet)
-
-    return path
-}
-
-val visitedPlanets = mutableSetOf<String>("Eden", "Earth")
-
-fun findClosestPlanetWithConditionBfs(universe: UniverseDto, startPlanet: String): String {
-
-    val graph = mutableMapOf<String, List<String>>()
-
-    universe.universe!!.forEach {
-        val from = it[0] as String
-        val to = it[1] as String
-        val cost = (it[2] as Double).roundToInt()
-
-        graph[from] = graph.getOrDefault(from, listOf()) + to
-        graph[to] = graph.getOrDefault(to, listOf()) + from
-    }
-
-    val visited = mutableSetOf<String>()
-    val queue = mutableListOf(listOf(startPlanet))
-
-
-    while (queue.isNotEmpty()) {
-        val path = queue.removeAt(0)
-        val node = path.last()
-
-        if (node != startPlanet && !visitedPlanets.contains(node)) {
-            return node
-        }
-
-        if (visited.contains(node)) {
-            continue
-        }
-
-        visited.add(node)
-
-        graph[node]?.forEach {
-            if (!visited.contains(it)) {
-                queue.add(path + it)
-            }
-        }
-    }
-
-    return "Eden"
-}
-
-/**
- * take to account cost of move
- */
-fun aStarSearch(universe: UniverseDto, currentPlanet: String, targetPlanet: String): List<String> {
-
-    val graph = mutableMapOf<String, List<String>>()
-
-    universe.universe!!.forEach {
-        val from = it[0] as String
-        val to = it[1] as String
-        val cost = (it[2] as Double).roundToInt()
-
-        graph[from] = graph.getOrDefault(from, listOf()) + to
-        //   graph[to] = graph.getOrDefault(to, listOf()) + from
-    }
-
-    val visited = mutableSetOf<String>()
-    val queue = mutableListOf(listOf(currentPlanet))
-
-    while (queue.isNotEmpty()) {
-        val path = queue.removeAt(0)
-        val node = path.last()
-
-        if (node == targetPlanet) {
-            return path
-        }
-
-        if (visited.contains(node)) {
-            continue
-        }
-
-        visited.add(node)
-
-        graph[node]?.forEach {
-            if (!visited.contains(it)) {
-                queue.add(path + it)
-            }
-        }
-    }
-
-    return listOf()
 }
 
 fun log(vararg any: Any?) {
