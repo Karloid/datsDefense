@@ -1,3 +1,5 @@
+import java.awt.Color
+import java.awt.image.BufferedImage
 import java.io.File
 import java.text.DateFormat
 import java.util.*
@@ -47,7 +49,10 @@ private fun doLoop() {
 
     val activeRound = roundsInfo.rounds.firstOrNull { it.status == "active" }
 
-    log("my round=${state.currentRound} active round $activeRound")
+    val nextRound = roundsInfo.rounds.firstOrNull { it.status != "ended" }
+
+    log("my round=${state.currentRound} active round $activeRound nextRound=$nextRound")
+
 
     val canRegisterTo = activeRound?.takeIf {
         val elapsedTime = System.currentTimeMillis() - it.getStartAsLong()
@@ -93,43 +98,130 @@ private fun doLoop() {
         log("active round not match, reset to empty, prevValue=${state.currentRound} activeRound=$activeRound")
         state.currentRound = ""
         state.save()
+        Thread.sleep(2000)
         return
-    }
-    var worldState: WorldState? = null
-
-    while (true) {
-        runCatching {
-            worldState = Api.getWorldState()
-        }.onFailure {
-            log("getWorldState failed, retry in  ${it.stackTraceToString()}")
-            Thread.sleep(1000)
-        }
-
-        if (worldState != null) {
-            break
-        }
     }
 
     // play round
     while (true) {
+
+        var worldState: WorldState? = null
+
+        while (true) {
+            runCatching {
+                worldState = Api.getWorldState()
+            }.onFailure {
+                log("getWorldState failed, retry in  ${it.stackTraceToString()}")
+                Thread.sleep(1700)
+            }
+
+            if (worldState != null) {
+                break
+            }
+        }
+
         log("get playRound")
         val worldUnits = Api.getUnits()
-        log("current turn ${worldUnits.turn} turnEndsInMs=${worldUnits.turnEndsInMs}")
         val startsTs = System.currentTimeMillis()
+
+        log("current turn ${worldUnits.turn} turnEndsInMs=${worldUnits.turnEndsInMs}")
+
         val endTurn = startsTs + worldUnits.turnEndsInMs
 
-        makeTurn(worldUnits, worldState!!)
+        makeTurn(worldUnits, worldState!!, activeRound)
 
         val delay = endTurn - System.currentTimeMillis() + 2
         log("sleep for $delay ")
         if (delay > 0) {
             Thread.sleep(delay)
         }
-        break
+
+        if (worldUnits.base.isEmpty()) {
+            log("no base, exit")
+            break
+        }
     }
 }
 
-fun makeTurn(units: WorldUnits, worldState: WorldState) {
+fun createPngWithMap(worldUnits: WorldUnits, worldState: WorldState?, activeRound: Round?, response: CommandResponse) {
+    // create png image draw units on it and save
+    val canvasSize = 2000
+    val GRID_SIZE = 10
+    val image = BufferedImage(canvasSize, canvasSize, BufferedImage.TYPE_INT_ARGB)
+    val g = image.graphics
+
+    g.clearRect(0, 0, canvasSize, canvasSize)
+
+    g.color = java.awt.Color.BLACK
+    g.fillRect(0, 0, canvasSize, canvasSize)
+
+    g.color = java.awt.Color.WHITE
+
+    val head = worldUnits.base.firstOrNull { it.isHead }
+
+    val offsetX = (head?.x ?: 0) * -GRID_SIZE + canvasSize / 2
+    val offsetY = (head?.x ?: 0) * -GRID_SIZE + canvasSize / 2
+
+    worldUnits.base.forEach {
+        g.color = java.awt.Color.WHITE
+        if (it.isHead) {
+            g.color = java.awt.Color.YELLOW
+        }
+        g.fillRect(it.pos.x * GRID_SIZE + offsetX, it.pos.y * GRID_SIZE + offsetY, GRID_SIZE, GRID_SIZE)
+    }
+
+    g.color = Color.RED//.setAlpha(0.5)
+    worldUnits.zombies.forEach {
+        g.fillRect(it.pos.x * GRID_SIZE + offsetX, it.pos.y * GRID_SIZE + offsetY, GRID_SIZE / 2, GRID_SIZE / 2)
+    }
+
+    g.color = java.awt.Color.BLUE
+    worldUnits.enemyBlocks.forEach {
+        g.fillRect(it.pos.x * GRID_SIZE + offsetX, it.pos.y * GRID_SIZE + offsetY, GRID_SIZE, GRID_SIZE)
+    }
+
+
+    worldState?.zpots?.forEach {
+        if (it.type == "wall") {
+            g.color = java.awt.Color.GREEN
+        } else {
+            g.color = java.awt.Color.PINK
+        }
+        g.fillRect(it.pos.x * GRID_SIZE + offsetX, it.pos.y * GRID_SIZE + offsetY, GRID_SIZE, GRID_SIZE)
+    }
+
+    // draw attack lines
+
+    response.acceptedCommands.attack?.forEach { attack ->
+        val base = worldUnits.base.firstOrNull { it.id == attack.blockId }
+        if (base != null) {
+            g.color = Color.RED
+            g.drawLine(base.pos.x * GRID_SIZE + offsetX, base.pos.y * GRID_SIZE + offsetY, attack.target.x * GRID_SIZE + offsetX, attack.target.y * GRID_SIZE + offsetY)
+        }
+    }
+
+    g.dispose()
+
+    val folder = File("maps/${activeRound?.name ?: "unk"}")
+    runCatching { File("maps").mkdir() }
+    runCatching {
+        folder.mkdir()
+    }
+
+    val file = File(folder, "map-${worldUnits.turn.toString().padStart(5, '0')}.png")
+
+    file.outputStream().use {
+        javax.imageio.ImageIO.write(image, "png", it)
+    }
+    log("saved map turn=${worldUnits.turn} to ${file.absolutePath}")
+}
+
+private fun Color.setAlpha(d: Double): Color {
+    return Color(red, green, blue, (d * 255).toInt())
+}
+
+fun makeTurn(units: WorldUnits, worldState: WorldState, activeRound: Round?) {
+    Thread.sleep(500)
     var myGold = units.player.gold
 
     val cmd = Command()
@@ -138,7 +230,7 @@ fun makeTurn(units: WorldUnits, worldState: WorldState) {
 
     log("my states gold=${myGold} base=${units.base?.size} zombies=${units.zombies?.size} enemyBlocks=${units.enemyBlocks?.size} zpots=${worldState.zpots.size}")
 
-    val headBase = units.base.firstOrNull() { it.isHead }
+    val headBase = units.base.firstOrNull() { it.isHead } ?: return
 
     val allPossiblePlaces = units.base?.flatMap { b ->
         val pos = b.pos
@@ -158,9 +250,11 @@ fun makeTurn(units: WorldUnits, worldState: WorldState) {
         headBase?.pos?.euclidianDistance2(it) ?: 0.0
     } ?: emptyList()
 
-    allPossiblePlaces.take(myGold).forEach { posToBuild ->
-        cmd.build.add(posToBuild)
-    }
+    allPossiblePlaces
+        .distinct()
+        .take(myGold).forEach { posToBuild ->
+            cmd.build.add(posToBuild)
+        }
 
     // kill zombies
 
@@ -170,24 +264,88 @@ fun makeTurn(units: WorldUnits, worldState: WorldState) {
 
         val range = base.range
 
-        val zombiesInRange = units.zombies.filter { it.pos.euclidianDistance2(pos) <= range * range }.minByOrNull { it.pos.euclidianDistance2(pos) }
+        var zombiesInRange = units.zombies.filter {
+                    it.health > 0 &&
+                    it.pos.euclidianDistance2(pos) <= range * range && canAttackMyUnits(units, it)
+        }
+            //.minByOrNull { it.pos.euclidianDistance2(pos) }
+            .minByOrNull { it.health }
 
         zombiesInRange?.let { z ->
             cmd.attack.add(Command.Attack(base.id, z.pos))
+            z.health -= base.attack
             return@forEach
         }
 
-        val enemyBlock = units.enemyBlocks.filter { it.pos.euclidianDistance2(pos) <= range * range }.minByOrNull { it.pos.euclidianDistance2(pos) }
+        val enemyBlock = units.enemyBlocks.filter { it.health > 0 && it.pos.euclidianDistance2(pos) <= range * range }
+            .minByOrNull { it.health }
 
         enemyBlock?.let { z ->
             cmd.attack.add(Command.Attack(base.id, z.pos))
+            z.health -= base.attack
+            return@forEach
+        }
+
+
+        zombiesInRange = units.zombies.filter {
+            it.type == "bomber" &&
+                    it.health > 0 &&
+                    it.pos.euclidianDistance2(pos) <= range * range
+        }
+            //.minByOrNull { it.pos.euclidianDistance2(pos) }
+            .minByOrNull { it.health }
+
+        zombiesInRange?.let { z ->
+            cmd.attack.add(Command.Attack(base.id, z.pos))
+            z.health -= base.attack
+            return@forEach
+        }
+
+        zombiesInRange = units.zombies.filter {
+            it.health > 0 && it.pos.euclidianDistance2(pos) <= range * range
+        }
+            .minByOrNull { it.health }
+
+        zombiesInRange?.let { z ->
+            cmd.attack.add(Command.Attack(base.id, z.pos))
+            z.health -= base.attack
             return@forEach
         }
     }
 
+    var currentBase = units.base.firstOrNull { it.isHead }
+
+
     val response = Api.command(cmd)
 
-    log("cmd response, accepted commands= attacks=${response.acceptedCommands.attack.size} build=${response.acceptedCommands.build.size} failed=${response.errors?.size} ${response.errors}")
+    createPngWithMap(units, worldState, activeRound, response)
+
+    log("cmd response, accepted commands= attacks=${response.acceptedCommands.attack?.size} build=${response.acceptedCommands.build?.size} failed=${response.errors?.size} ${response.errors}")
+}
+
+fun canAttackMyUnits(units: WorldUnits, zombie: Zombie): Boolean {
+    val direction = when (zombie.direction) {
+        "up" -> {Point2D.UP}
+        "down" -> {Point2D.DOWN}
+        "left" -> {Point2D.LEFT}
+        "right" -> {Point2D.RIGHT}
+        else -> {Point2D.ZERO}
+    }
+
+    val zombiePos = zombie.pos.copy()
+
+    repeat(30) { it ->
+        zombiePos.add(direction)
+        if (units.hashPos[zombiePos] != null) {
+            return true
+        }
+
+    }
+
+    // 0 0 , 0 1
+    // 1 0 , 1 1
+
+    return false
 }
 
 fun inBounds(it: Point2D): Boolean {

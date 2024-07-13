@@ -365,8 +365,8 @@ data class CommandResponse(
     val errors: List<String>?
 ) {
     data class AcceptedCommand(
-        val attack: List<Attack>,
-        val build: List<Point2D>,
+        val attack: List<Attack>?,
+        val build: List<Point2D>?,
         val moveBase: Point2D
     ) {
         data class Attack(
@@ -422,7 +422,7 @@ data class Player(
 
 data class EnemyBlock(
     val attack: Int,
-    val health: Int,
+    var health: Int,
     val isHead: Boolean,
     val x: Int,
     val y: Int
@@ -461,13 +461,25 @@ data class WorldUnits(
     val turnEndsInMs: Int,
     var zombies: List<Zombie>,
 ) {
+
+    var _hashPos: HashMap<Point2D, Base>? = null
+    val hashPos: HashMap<Point2D, Base>
+        get() {
+            if (_hashPos == null) {
+                _hashPos = HashMap()
+                base.forEach {
+                    _hashPos!![it.pos] = it
+                }
+            }
+            return _hashPos!!
+        }
 }
 
 
 data class Zombie(
     val attack: Int,
     val direction: String,
-    val health: Int,
+    var health: Int,
     val id: String,
     val speed: Int,
     val type: String,
@@ -556,7 +568,7 @@ data class Round(
     }
 
     override fun toString(): String {
-        return "Round( name='$name' duration=$duration, endAt=${getEndAsLong().toDate()}, repeat=$repeat, startAt=${getStartAsLong().toDate()}, status='$status')"
+        return "Round( name='$name' duration=$duration, startAt=${getStartAsLong().toDate()} endAt=${getEndAsLong().toDate()}, repeat=$repeat, , status='$status')"
     }
 }
 
