@@ -116,7 +116,7 @@ private fun doLoop() {
         val unitsStartTs = System.currentTimeMillis()
         while (true) {
             // if more than 5 minutes of attempts then exit
-            if (System.currentTimeMillis() - unitsStartTs > 5 * 60 * 1000) {
+            if (System.currentTimeMillis() - unitsStartTs > 4 * 60 * 1000) {
                 throw IllegalStateException("more than 5 minutes of attempts of units to get units, exit")
             }
 
@@ -261,13 +261,11 @@ fun makeTurn(units: WorldUnits, worldState: WorldState, activeRound: Round?) {
 
     val cmd = Command()
 
-    val costBase = 1
-
-    log("my states gold=${myGold} base=${units.base?.size} zombies=${units.zombies?.size} enemyBlocks=${units.enemyBlocks?.size} zpots=${worldState.zpots.size}")
+    log("my states gold=${myGold} base=${units.base.size} zombies=${units.zombies?.size} enemyBlocks=${units.enemyBlocks?.size} zpots=${worldState.zpots.size}")
 
     val headBase = units.base.firstOrNull() { it.isHead } ?: return
 
-    val allPossiblePlaces = units.base?.flatMap { b ->
+    val allPossiblePlaces = units.base.flatMap { b ->
         val pos = b.pos
 
         pos.neighbors().filter { pos ->
