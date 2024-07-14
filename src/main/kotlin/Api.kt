@@ -8,8 +8,8 @@ import java.time.format.DateTimeFormatter
 
 var apiToken = ""
 
-//val BASE_URL = "https://games-test.datsteam.dev"
-val BASE_URL = "https://games.datsteam.dev"
+val BASE_URL = "https://games-test.datsteam.dev"
+//val BASE_URL = "https://games.datsteam.dev"
 
 object Api {
 

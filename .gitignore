@@ -28,6 +28,7 @@ maps
 bin/
 !**/src/main/**/bin/
 !**/src/test/**/bin/
+deploy_orange.sh
 
 ### NetBeans ###
 /nbproject/private/
@@ -45,3 +46,5 @@ bin/
 *.txt
 
 state.json
+
+datsDefense.jar

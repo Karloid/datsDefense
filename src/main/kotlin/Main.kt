@@ -1,6 +1,7 @@
 import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.File
+import java.lang.IllegalStateException
 import java.text.DateFormat
 import java.util.*
 import java.util.concurrent.Executors
@@ -45,13 +46,17 @@ data class State(var currentRound: String? = "") {
 }
 
 private fun doLoop() {
+    clearOldMaps()
+
     val roundsInfo = Api.getRounds()
 
-    val activeRound = roundsInfo.rounds.firstOrNull { it.status == "active" }
+    val rounds = roundsInfo.rounds.sortedBy { it.getStartAsLong() }
+    val activeRound = rounds.firstOrNull { it.status == "active" }
 
-    val nextRound = roundsInfo.rounds.firstOrNull { it.status != "ended" }
+    val nextRound = rounds.firstOrNull { it.status != "ended" }
+    val nextRound5Rounds = rounds.filter { it.status != "ended" }.take(5)
 
-    log("my round=${state.currentRound} active round $activeRound nextRound=$nextRound")
+    log("my round=${state.currentRound} active round $activeRound nextRound=$nextRound next5Rounds=$nextRound5Rounds")
 
 
     val canRegisterTo = activeRound?.takeIf {
@@ -102,16 +107,27 @@ private fun doLoop() {
         return
     }
 
+    log("starting round loop active=${activeRound} ")
     // play round
     while (true) {
 
         var worldState: WorldState? = null
 
+        val unitsStartTs = System.currentTimeMillis()
         while (true) {
+            // if more than 5 minutes of attempts then exit
+            if (System.currentTimeMillis() - unitsStartTs > 5 * 60 * 1000) {
+                throw IllegalStateException("more than 5 minutes of attempts of units to get units, exit")
+            }
+
             runCatching {
                 worldState = Api.getWorldState()
             }.onFailure {
-                log("getWorldState failed, retry in  ${it.stackTraceToString()}")
+                val stackTraceToString = it.stackTraceToString()
+                if (stackTraceToString.contains("not participating in this round")) {
+                    throw it
+                }
+                log("getWorldState failed, retry in  $stackTraceToString")
                 Thread.sleep(1700)
             }
 
@@ -120,7 +136,6 @@ private fun doLoop() {
             }
         }
 
-        log("get playRound")
         val worldUnits = Api.getUnits()
         val startsTs = System.currentTimeMillis()
 
@@ -141,6 +156,27 @@ private fun doLoop() {
             break
         }
     }
+}
+
+fun clearOldMaps() {
+    val file = File("maps")
+    runCatching {
+        file.mkdir()
+    }
+
+    file.listFiles().sortedBy { it.lastModified() }
+        .reversed()
+        .drop(20)
+        .forEach {
+            runCatching {
+                log("delete old maps ${it.absolutePath}")
+                // delete folder with all content
+                it.deleteRecursively()
+            }
+                .onFailure {
+                    System.err.println("delete failed ${it.stackTraceToString()}")
+                }
+        }
 }
 
 fun createPngWithMap(worldUnits: WorldUnits, worldState: WorldState?, activeRound: Round?, response: CommandResponse) {
@@ -203,7 +239,6 @@ fun createPngWithMap(worldUnits: WorldUnits, worldState: WorldState?, activeRoun
     g.dispose()
 
     val folder = File("maps/${activeRound?.name ?: "unk"}")
-    runCatching { File("maps").mkdir() }
     runCatching {
         folder.mkdir()
     }
@@ -265,7 +300,7 @@ fun makeTurn(units: WorldUnits, worldState: WorldState, activeRound: Round?) {
         val range = base.range
 
         var zombiesInRange = units.zombies.filter {
-                    it.health > 0 &&
+            it.health > 0 &&
                     it.pos.euclidianDistance2(pos) <= range * range && canAttackMyUnits(units, it)
         }
             //.minByOrNull { it.pos.euclidianDistance2(pos) }
@@ -325,11 +360,25 @@ fun makeTurn(units: WorldUnits, worldState: WorldState, activeRound: Round?) {
 
 fun canAttackMyUnits(units: WorldUnits, zombie: Zombie): Boolean {
     val direction = when (zombie.direction) {
-        "up" -> {Point2D.UP}
-        "down" -> {Point2D.DOWN}
-        "left" -> {Point2D.LEFT}
-        "right" -> {Point2D.RIGHT}
-        else -> {Point2D.ZERO}
+        "up" -> {
+            Point2D.UP
+        }
+
+        "down" -> {
+            Point2D.DOWN
+        }
+
+        "left" -> {
+            Point2D.LEFT
+        }
+
+        "right" -> {
+            Point2D.RIGHT
+        }
+
+        else -> {
+            Point2D.ZERO
+        }
     }
 
     val zombiePos = zombie.pos.copy()

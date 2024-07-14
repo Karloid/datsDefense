@@ -1,6 +1,7 @@
 plugins {
     id 'org.jetbrains.kotlin.jvm' version '1.8.0'
     id 'application'
+    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 group = 'com.krld.def'
@@ -30,3 +31,10 @@ kotlin {
 application {
     mainClassName = 'MainKt'
 }
+
+shadowJar {
+    destinationDirectory = file("./")
+    archiveFileName = 'datsDefense.jar'
+}
+
+mainClassName = 'MainKt'
