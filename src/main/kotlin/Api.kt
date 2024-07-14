@@ -41,6 +41,7 @@ object Api {
      */
 
     fun getRounds(): RoundsDto {
+        throttle()
         val request = okhttp3.Request.Builder()
             .url("$BASE_URL/rounds/zombidef")
             .get()
@@ -76,7 +77,7 @@ object Api {
             lastRequest.removeFirst()
         }
 
-        if (lastRequest.size < 4) {
+        if (lastRequest.size < 3) {
             lastRequest.add(currentTs)
             return
         }
@@ -101,6 +102,7 @@ object Api {
      * }
      */
     fun joinRound(name: String): JoinResponse {
+        throttle()
 
         /*        val command = arrayOf(
                     "curl", "-X", "PUT",
@@ -153,21 +155,9 @@ object Api {
         return result
     }
 
-    /**
-     * {
-     * "realmName": "map1",
-     * "zpots": [
-     * {
-     * "x": 1,
-     * "y": 1,
-     * "type": "default"
-     * }
-     * ]
-     * }
-     *
-     *GET  https://games.datsteam.dev/play/zombidef/world
-     */
     fun getWorldState(): WorldState {
+        throttle()
+
         val request = okhttp3.Request.Builder()
             .url("$BASE_URL/play/zombidef/world")
             .get()
@@ -185,68 +175,14 @@ object Api {
 
         val body = response.body?.string()
 
-       // log (body)
+        // log (body)
 
         val result = gson.fromJson(body, WorldState::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
         return result
     }
 
-    /**
-     * get https://games.datsteam.dev/play/zombidef/units
-     *
-     *  {
-     * "base": [
-     * {
-     * "attack": 10,
-     * "health": 100,
-     * "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-     * "isHead": true,
-     * "lastAttack": {
-     * "x": 1,
-     * "y": 1
-     * },
-     * "range": 5,
-     * "x": 1,
-     * "y": 1
-     * }
-     * ],
-     * "enemyBlocks": [
-     * {
-     * "attack": 10,
-     * "health": 100,
-     * "isHead": true,
-     * "x": 1,
-     * "y": 1
-     * }
-     * ],
-     * "player": {
-     * "enemyBlockKills": 100,
-     * "gameEndedAt": "2021-10-10T10:00:00Z",
-     * "gold": 100,
-     * "name": "player-test",
-     * "points": 100,
-     * "zombieKills": 100
-     * },
-     * "realmName": "map1",
-     * "turn": 1,
-     * "turnEndsInMs": 1000,
-     * "zombies": [
-     * {
-     * "attack": 10,
-     * "direction": "up",
-     * "health": 100,
-     * "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-     * "speed": 10,
-     * "type": "normal",
-     * "waitTurns": 1,
-     * "x": 1,
-     * "y": 1
-     * }
-     * ]
-     * }
-     */
     fun getUnits(): WorldUnits {
-
+        throttle()
         val request = okhttp3.Request.Builder()
             .url("$BASE_URL/play/zombidef/units")
             .get()
@@ -264,71 +200,18 @@ object Api {
 
         val body = response.body?.string()
 
-    //    log(body)
+        //    log(body)
 
         val result = gson.fromJson(body, WorldUnitsDto::class.java) ?: throw Exception("Failed to parse response response=$response body=$body")
         return result.toObj()
     }
 
-    /**
-     * POST https://games-test.datsteam.dev/play/zombidef/command
-     *
-     * request
-     * {
-     *   "attack": [
-     *     {
-     *       "blockId": "f47ac10b-58cc-0372-8562-0e02b2c3d479",
-     *       "target": {
-     *         "x": 1,
-     *         "y": 1
-     *       }
-     *     }
-     *   ],
-     *   "build": [
-     *     {
-     *       "x": 1,
-     *       "y": 1
-     *     }
-     *   ],
-     *   "moveBase": {
-     *     "x": 1,
-     *     "y": 1
-     *   }
-     * }
-     *
-     * response
-     *
-     * {
-     *   "acceptedCommands": {
-     *     "attack": [
-     *       {
-     *         "blockId": "f47ac10b-58cc-0372-8562-0e02b2c3d479",
-     *         "target": {
-     *           "x": 1,
-     *           "y": 1
-     *         }
-     *       }
-     *     ],
-     *     "build": [
-     *       {
-     *         "x": 1,
-     *         "y": 1
-     *       }
-     *     ],
-     *     "moveBase": {
-     *       "x": 1,
-     *       "y": 1
-     *     }
-     *   },
-     *   "errors": [
-     *     "coordinate at {0 0} is already occupied"
-     *   ]
-     * }
-     */
+
     fun command(cmd: Command): CommandResponse {
+        throttle()
         val json = gson.toJson(cmd)
 
-      //  log(json)
+        //  log(json)
 
         val body = okhttp3.RequestBody.create("application/json".toMediaTypeOrNull(), json)
 
@@ -350,11 +233,11 @@ object Api {
         val bodyResponse = response.body?.string()
 
 
-      //  log(bodyResponse)
+        //  log(bodyResponse)
 
         val result = gson.fromJson(bodyResponse, CommandResponse::class.java) ?: throw Exception("Failed to parse response response=$response body=$bodyResponse")
 
-      //  log(result)
+        //  log(result)
 
         return result
     }
@@ -390,23 +273,32 @@ data class Command(
 
 data class Base(
     val attack: Int,
-    val health: Int,
+    override val health: Int,
     val id: String,
     val isHead: Boolean,
     val lastAttack: Point2D,
     val range: Int,
     val x: Int,
     val y: Int
-) {
+) : HasPosAndHealth {
 
     private var _pos: Point2D? = null
-    val pos: Point2D
+    override val pos: Point2D
         get() {
             if (_pos == null) {
                 _pos = Point2D(x, y)
             }
             return _pos!!
         }
+    override val maxHealth: Int
+        get() = if (isHead) 300 else 100
+}
+
+interface HasPosAndHealth {
+    val pos: Point2D
+    val health: Int
+
+    val maxHealth: Int
 }
 
 data class Player(
@@ -422,20 +314,22 @@ data class Player(
 
 data class EnemyBlock(
     val attack: Int,
-    var health: Int,
+    override var health: Int,
     val isHead: Boolean,
     val x: Int,
     val y: Int
-) {
+) : HasPosAndHealth {
 
     var _pos: Point2D? = null
-    val pos: Point2D
+    override val pos: Point2D
         get() {
             if (_pos == null) {
                 _pos = Point2D(x, y)
             }
             return _pos!!
         }
+    override val maxHealth: Int
+        get() = if (isHead) 300 else 100
 }
 
 data class WorldUnitsDto(

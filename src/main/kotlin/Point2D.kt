@@ -216,7 +216,7 @@ class Point2D {
         val deltaX = Math.abs(x - pos.x)
         // diagonal is not neighbor
         val deltaY = Math.abs(y - pos.y)
-        return (deltaX == 1 && deltaY == 0) || (deltaY == 1 && deltaX == 0) || (deltaX == 0 && deltaY == 0)
+        return neighborTo(pos) || (deltaX == 1 && deltaY == 1)
     }
 
     /*
